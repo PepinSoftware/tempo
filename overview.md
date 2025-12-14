@@ -20,8 +20,8 @@ message Series {
   string id = 1;
   string dataset_id = 2;
   string name = 3;
-  string source_uri = 4;
-  string sampling_hz = 5; // optional numeric string to avoid float pitfalls
+  string source_uri = 4; // pointer to where points live (object store, topic, etc.)
+  string ordering = 5;   // e.g., "timestamp" or "ordinal" for point ordering semantics
   google.protobuf.Timestamp created_at = 6;
 }
 
@@ -39,6 +39,15 @@ message Classification {
   google.protobuf.Timestamp applied_at = 4;
 }
 
+message Point {
+  oneof ordering {
+    google.protobuf.Timestamp timestamp = 1;
+    uint64 ordinal = 2;
+  }
+  double value = 3;
+  map<string, string> meta = 4; // optional per-point metadata (e.g., quality flags, source)
+}
+
 message CreateDatasetRequest { string name = 1; string description = 2; }
 message CreateDatasetResponse { Dataset dataset = 1; }
 
@@ -46,7 +55,7 @@ message RegisterSeriesRequest {
   string dataset_id = 1;
   string name = 2;
   string source_uri = 3;
-  string sampling_hz = 4;
+  string ordering = 4;
 }
 message RegisterSeriesResponse { Series series = 1; }
 
@@ -69,6 +78,14 @@ message GetSeriesClassificationResponse { Classification classification = 1; }
 message ListSeriesRequest { string dataset_id = 1; }
 message ListSeriesResponse { repeated Series series = 1; }
 
+message AppendPointsRequest {
+  string series_id = 1;
+  repeated Point points = 2;
+}
+message AppendPointsResponse {
+  uint64 accepted = 1; // number of points written
+}
+
 service TempoService {
   rpc CreateDataset(CreateDatasetRequest) returns (CreateDatasetResponse);
   rpc RegisterSeries(RegisterSeriesRequest) returns (RegisterSeriesResponse);
@@ -76,6 +93,7 @@ service TempoService {
   rpc SetSeriesClassification(SetSeriesClassificationRequest) returns (SetSeriesClassificationResponse);
   rpc GetSeriesClassification(GetSeriesClassificationRequest) returns (GetSeriesClassificationResponse);
   rpc ListSeries(ListSeriesRequest) returns (ListSeriesResponse);
+  rpc AppendPoints(AppendPointsRequest) returns (AppendPointsResponse);
 }
 ```
 
@@ -87,10 +105,10 @@ service TempoService {
 
 ## Phase 1 Detailed Plan
 - **Data model & constraints**
-  - Tables: `datasets`, `series`, `label_definitions`, `series_classifications`, `event_log`.
+  - Tables: `datasets`, `series`, `label_definitions`, `series_classifications`, `points_ts`, `points_ord`, `event_log`.
   - Constraints: FK integrity, unique `(series_id, label_definition_id)` in `series_classifications`, non-empty `values` array for label definitions, created/updated timestamps.
-  - Indexes: PK per table; composite index on `series(dataset_id, name)`; index on `series_classifications(label_definition_id)`.
-  - Hypertables: make `series_classifications` a hypertable on `applied_at` (Timescale) for efficient time-filtered queries.
+  - Indexes: PK per table; composite index on `series(dataset_id, name)`; index on `series_classifications(label_definition_id)`; unique `(series_id, ts)` for `points_ts`; unique `(series_id, ordinal)` for `points_ord`.
+  - Hypertables: `points_ts` partitioned on `ts`; `points_ord` partitioned on `ordinal`; `series_classifications` hypertable on `applied_at`.
 - **Migrations**
   - Tool: `sqlx migrate` (offline mode) with checked-in SQL.
   - Add migration tests that apply/rollback against a throwaway Timescale container.
@@ -105,8 +123,8 @@ service TempoService {
   - Logging with `tracing` + JSON option; healthz endpoint via gRPC reflection or a minimal TCP health check.
   - Docker Compose for TimescaleDB; optional `sqlx` offline cache baked in.
 - **Service behavior (initial)**
-  - gRPC handlers map 1:1 to services, performing validation then repository calls.
-  - Error mapping: not found, invalid argument (bad label value), conflict (duplicate classification), internal.
+  - gRPC handlers map 1:1 to services, performing validation then repository calls; `AppendPoints` enforces monotonic ordering within a batch, rejects ordering type mismatches, and deduplicates identical points (same series, ordering key) when re-sent.
+  - Error mapping: not found, invalid argument (bad label value, unordered points), conflict (duplicate classification), internal.
 - **Testing**
   - Unit tests in `core` for validation logic.
   - Integration tests in `service` hitting a test TimescaleDB (via `docker compose` or `testcontainers`).
