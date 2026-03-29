@@ -1,0 +1,29 @@
+[workspace]
+members = [
+  "crates/core",
+  "crates/persistence",
+  "crates/service",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tokio = { version = "1.35", features = ["macros", "rt-multi-thread", "time", "sync"] }
+tonic = { version = "0.11", features = ["transport"] }
+tonic-build = "0.11"
+prost = "0.12"
+prost-types = "0.12"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+sqlx = { version = "0.7", default-features = false, features = ["runtime-tokio", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
+uuid = { version = "1.6", features = ["serde", "v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+config = "0.13"

@@ -1,0 +1,5 @@
+/target
+**/*.rs.bk
+**/sqlx-data.json
+.env
+.DS_Store

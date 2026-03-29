@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package tempo.v1;
+
+import "google/protobuf/timestamp.proto";
+
+message Dataset {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message Series {
+  string id = 1;
+  string dataset_id = 2;
+  string name = 3;
+  string source_uri = 4; // pointer to where points live (object store, topic, etc.)
+  string ordering = 5;   // e.g., "timestamp" or "ordinal" for point ordering semantics
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message LabelDefinition {
+  string id = 1;
+  string name = 2;          // e.g., "quality"
+  repeated string values = 3; // allowed classifications
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message Classification {
+  string series_id = 1;
+  string label_definition_id = 2;
+  string value = 3; // must be one of LabelDefinition.values
+  google.protobuf.Timestamp applied_at = 4;
+}
+
+message Point {
+  oneof ordering {
+    google.protobuf.Timestamp timestamp = 1;
+    uint64 ordinal = 2;
+  }
+  double value = 3;
+  map<string, string> meta = 4; // optional per-point metadata (e.g., quality flags, source)
+}
+
+message CreateDatasetRequest { string name = 1; string description = 2; }
+message CreateDatasetResponse { Dataset dataset = 1; }
+
+message RegisterSeriesRequest {
+  string dataset_id = 1;
+  string name = 2;
+  string source_uri = 3;
+  string ordering = 4;
+}
+message RegisterSeriesResponse { Series series = 1; }
+
+message DefineLabelRequest { string name = 1; repeated string values = 2; }
+message DefineLabelResponse { LabelDefinition label_definition = 1; }
+
+message SetSeriesClassificationRequest {
+  string series_id = 1;
+  string label_definition_id = 2;
+  string value = 3;
+}
+message SetSeriesClassificationResponse { Classification classification = 1; }
+
+message GetSeriesClassificationRequest {
+  string series_id = 1;
+  string label_definition_id = 2;
+}
+message GetSeriesClassificationResponse { Classification classification = 1; }
+
+message ListSeriesRequest { string dataset_id = 1; }
+message ListSeriesResponse { repeated Series series = 1; }
+
+message AppendPointsRequest {
+  string series_id = 1;
+  repeated Point points = 2;
+}
+message AppendPointsResponse {
+  uint64 accepted = 1; // number of points written
+}
+
+service TempoService {
+  rpc CreateDataset(CreateDatasetRequest) returns (CreateDatasetResponse);
+  rpc RegisterSeries(RegisterSeriesRequest) returns (RegisterSeriesResponse);
+  rpc DefineLabel(DefineLabelRequest) returns (DefineLabelResponse);
+  rpc SetSeriesClassification(SetSeriesClassificationRequest) returns (SetSeriesClassificationResponse);
+  rpc GetSeriesClassification(GetSeriesClassificationRequest) returns (GetSeriesClassificationResponse);
+  rpc ListSeries(ListSeriesRequest) returns (ListSeriesResponse);
+  rpc AppendPoints(AppendPointsRequest) returns (AppendPointsResponse);
+}
